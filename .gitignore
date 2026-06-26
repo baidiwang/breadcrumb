@@ -1,0 +1,19 @@
+# deps
+node_modules
+dist
+dist-ssr
+
+# tauri / rust
+src-tauri/target
+
+# env & secrets
+.env
+.env.local
+*.local
+
+# os / editor
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea

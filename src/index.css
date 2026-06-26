@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+/* When wrapped as a Tauri overlay window, keep the page background transparent
+   so only the buoy is visible. Toggle this class from Rust/JS as needed. */
+body.overlay {
+  background: transparent !important;
+}
