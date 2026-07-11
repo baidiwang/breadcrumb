@@ -17,14 +17,10 @@ fn foreground_app() -> String {
 #[cfg(target_os = "macos")]
 fn get_foreground_app() -> Option<String> {
     use objc2_app_kit::NSWorkspace;
-    // Safe: AppKit main-thread access; called from the webview thread is acceptable
-    // for reading frontmostApplication's localizedName.
-    unsafe {
-        let workspace = NSWorkspace::sharedWorkspace();
-        let app = workspace.frontmostApplication()?;
-        let name = app.localizedName()?;
-        Some(name.to_string())
-    }
+    let workspace = NSWorkspace::sharedWorkspace();
+    let app = workspace.frontmostApplication()?;
+    let name = app.localizedName()?;
+    Some(name.to_string())
 }
 
 // ---------- Windows ----------
@@ -41,7 +37,7 @@ fn get_foreground_app() -> Option<String> {
 
     unsafe {
         let hwnd = GetForegroundWindow();
-        if hwnd.0 == std::ptr::null_mut() {
+        if hwnd.0 == 0 {
             return None;
         }
         let mut pid: u32 = 0;
