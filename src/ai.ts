@@ -1,30 +1,63 @@
-// AI layer. Three precise jobs (see BUOY_SPEC §4):
-//   1. classify(note)        -> breadcrumb | idea | unsure
-//   2. reentryBrief(crumbs)  -> "You were doing X, paused at Y, next was Z"  ★ star feature
-//   3. triageIdeas(ideas)    -> cluster suggestions
+// AI layer. Four precise jobs:
+//   1. classify(note)            -> breadcrumb | idea | unsure
+//   2. reentryBrief(crumbs)      -> "You were doing X, paused at Y, next was Z"  ★ star feature
+//   3. triageIdeas(ideas)        -> cluster suggestions
+//   4. suggestSessionName(crumbs)-> infer a short name from breadcrumb trail
 //
-// IMPORTANT (security): never ship an API key in the frontend. Two supported modes:
-//   - Web/Vercel: route through a serverless function at /api/ai (proxy holds the key).
-//   - Desktop/Tauri: route through a Rust command that reads the key from the OS keychain.
-// For first-run local dev you can temporarily set VITE_AI_PROXY to your proxy URL.
+// Key routing — two supported modes, tried in order:
+//   VITE_AI_PROXY        Web/Vercel: serverless proxy at /api/ai holds the key server-side.
+//   VITE_ANTHROPIC_API_KEY  Local dev only: call Anthropic directly from the frontend.
+//                           Key lives in .env.local (gitignored). Safe for local machines only.
+// TODO: before public release, add a third path — Tauri command that reads from the OS keychain.
 //
 // Every call degrades gracefully so the app is always usable without AI.
 
 import type { Breadcrumb, Focus } from "./types";
 
 const PROXY = import.meta.env.VITE_AI_PROXY as string | undefined;
+// TODO: before public release, route through authenticated proxy.
+// VITE_ANTHROPIC_API_KEY is for local dev only — never ship a real key in a bundled app.
+const DIRECT_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined;
+
+const MODEL = "claude-haiku-4-5-20251001";
 
 async function callModel(system: string, user: string): Promise<string> {
-  if (!PROXY) throw new Error("no-proxy");
-  const res = await fetch(PROXY, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system, user }),
-  });
-  if (!res.ok) throw new Error(`proxy ${res.status}`);
-  const data = await res.json();
-  // proxy is expected to return { text: string }
-  return (data.text ?? "").trim();
+  if (PROXY) {
+    const res = await fetch(PROXY, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ system, user }),
+    });
+    if (!res.ok) throw new Error(`proxy ${res.status}`);
+    const data = await res.json();
+    return (data.text ?? "").trim();
+  }
+
+  if (DIRECT_KEY) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": DIRECT_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 400,
+        system,
+        messages: [{ role: "user", content: user }],
+      }),
+    });
+    if (!res.ok) throw new Error(`direct ${res.status}`);
+    const data = await res.json();
+    return (data?.content ?? [])
+      .filter((b: { type: string }) => b.type === "text")
+      .map((b: { text: string }) => b.text)
+      .join("\n")
+      .trim();
+  }
+
+  throw new Error("no-ai-config");
 }
 
 // --- 1. classify ----------------------------------------------------------
@@ -57,7 +90,6 @@ export async function reentryBrief(
   focus: Focus | undefined,
   crumbs: Breadcrumb[]
 ): Promise<string> {
-  // Graceful fallback: a plain chronological recap, no AI needed.
   const fallback = buildPlainRecap(focus, crumbs);
   try {
     const system =
@@ -84,11 +116,11 @@ export async function reentryBrief(
 
 function buildPlainRecap(focus: Focus | undefined, crumbs: Breadcrumb[]): string {
   if (!focus && crumbs.length === 0) return "Welcome back. Nothing was logged while you were away.";
-  const head = focus ? `You were working on “${focus.label}.”` : "You were mid-something.";
+  const head = focus?.label ? `You were working on "${focus.label}."` : "You were mid-something.";
   const noted = crumbs.filter((c) => c.text);
   if (noted.length === 0) return `${head} You didn't leave a note — what was your next step?`;
   const last = noted[noted.length - 1];
-  return `${head} Your last breadcrumb: “${last.text}.” Pick up from there.`;
+  return `${head} Your last breadcrumb: "${last.text}." Pick up from there.`;
 }
 
 // --- 3. idea triage -------------------------------------------------------
@@ -103,5 +135,27 @@ export async function triageIdeas(ideas: Breadcrumb[]): Promise<string> {
     return (await callModel(system, user)) || fallback;
   } catch {
     return fallback;
+  }
+}
+
+// --- 4. session name suggestion -------------------------------------------
+export async function suggestSessionName(crumbs: Breadcrumb[]): Promise<string> {
+  if (crumbs.length === 0) return "";
+  try {
+    const system =
+      "Infer what an ADHD user was working on from their breadcrumb trail. " +
+      "Reply with ONLY a short session name: 2-5 words, lowercase, no quotes, no punctuation. " +
+      "Examples: reviewing pull requests, writing cover letter, debugging auth flow.";
+    const lines = crumbs
+      .slice(-10)
+      .map((c) => {
+        const app = c.signal?.foregroundApp ? ` [${c.signal.foregroundApp}]` : "";
+        return `- ${c.text ?? "(no note)"}${app}`;
+      })
+      .join("\n");
+    const name = await callModel(system, `Breadcrumbs:\n${lines}`);
+    return name.replace(/^["'\s]+|["'\s]+$/g, "").toLowerCase();
+  } catch {
+    return "";
   }
 }

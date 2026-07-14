@@ -5,7 +5,7 @@
 /** A thing you've declared you're currently doing. The buoy shows this as an anchor. */
 export type Focus = {
   id: string;
-  label: string; // e.g. "writing cover letter"
+  label?: string; // optional — AI suggests one after the session ends
   startedAt: number;
   endedAt?: number;
   status: "active" | "done" | "parked";
