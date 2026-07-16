@@ -4,60 +4,33 @@
 //   3. triageIdeas(ideas)        -> cluster suggestions
 //   4. suggestSessionName(crumbs)-> infer a short name from breadcrumb trail
 //
-// Key routing — two supported modes, tried in order:
-//   VITE_AI_PROXY        Web/Vercel: serverless proxy at /api/ai holds the key server-side.
-//   VITE_ANTHROPIC_API_KEY  Local dev only: call Anthropic directly from the frontend.
-//                           Key lives in .env.local (gitignored). Safe for local machines only.
-// TODO: before public release, add a third path — Tauri command that reads from the OS keychain.
+// Key routing:
+//   VITE_AI_PROXY=/api/ai  (set in .env.local AND on Vercel)
+//     Local dev  → Vite configureServer middleware (vite.config.ts) proxies to Anthropic
+//                  from Node. ANTHROPIC_API_KEY is read by Node; key never enters the bundle.
+//     Vercel     → api/ai.ts edge function. ANTHROPIC_API_KEY set in Vercel env vars.
+// TODO: production Tauri binary — route through OS keychain via a Rust command.
 //
-// Every call degrades gracefully so the app is always usable without AI.
+// Every call degrades gracefully — app is fully usable without AI.
 
 import type { Breadcrumb, Focus } from "./types";
 
 const PROXY = import.meta.env.VITE_AI_PROXY as string | undefined;
-// TODO: before public release, route through authenticated proxy.
-// VITE_ANTHROPIC_API_KEY is for local dev only — never ship a real key in a bundled app.
-const DIRECT_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined;
-
-const MODEL = "claude-haiku-4-5-20251001";
 
 async function callModel(system: string, user: string): Promise<string> {
-  if (PROXY) {
-    const res = await fetch(PROXY, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ system, user }),
-    });
-    if (!res.ok) throw new Error(`proxy ${res.status}`);
-    const data = await res.json();
-    return (data.text ?? "").trim();
-  }
+  if (!PROXY) throw new Error("[breadcrumb/ai] VITE_AI_PROXY not set");
 
-  if (DIRECT_KEY) {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": DIRECT_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 400,
-        system,
-        messages: [{ role: "user", content: user }],
-      }),
-    });
-    if (!res.ok) throw new Error(`direct ${res.status}`);
-    const data = await res.json();
-    return (data?.content ?? [])
-      .filter((b: { type: string }) => b.type === "text")
-      .map((b: { text: string }) => b.text)
-      .join("\n")
-      .trim();
+  const res = await fetch(PROXY, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system, user }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`[breadcrumb/ai] proxy ${res.status}: ${body}`);
   }
-
-  throw new Error("no-ai-config");
+  const data = await res.json() as { text?: string };
+  return (data.text ?? "").trim();
 }
 
 // --- 1. classify ----------------------------------------------------------
@@ -75,12 +48,20 @@ export async function classify(
       '{"kind":"breadcrumb|idea|unsure","tags":["..."]}. Max 3 short tags.';
     const user = `Current focus: ${focusLabel ?? "(none)"}\nNote: ${text}`;
     const raw = await callModel(system, user);
-    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
-    return {
-      kind: ["breadcrumb", "idea", "unsure"].includes(parsed.kind) ? parsed.kind : "unsure",
-      tags: Array.isArray(parsed.tags) ? parsed.tags.slice(0, 3) : [],
+    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim()) as {
+      kind: string;
+      tags: unknown[];
     };
-  } catch {
+    return {
+      kind: ["breadcrumb", "idea", "unsure"].includes(parsed.kind)
+        ? (parsed.kind as Breadcrumb["kind"])
+        : "unsure",
+      tags: Array.isArray(parsed.tags)
+        ? (parsed.tags.slice(0, 3) as string[])
+        : [],
+    };
+  } catch (e) {
+    console.error("[breadcrumb/ai] classify failed:", e);
     return fallback;
   }
 }
@@ -101,7 +82,9 @@ export async function reentryBrief(
     const lines = crumbs
       .map((c) => {
         const when = new Date(c.createdAt).toLocaleTimeString();
-        const away = c.signal?.awayMs ? ` (away ${Math.round(c.signal.awayMs / 60000)}m)` : "";
+        const away = c.signal?.awayMs
+          ? ` (away ${Math.round(c.signal.awayMs / 60000)}m)`
+          : "";
         const app = c.signal?.foregroundApp ? ` -> ${c.signal.foregroundApp}` : "";
         return `- ${when}${away}${app}: ${c.text ?? "(no note)"}`;
       })
@@ -109,16 +92,21 @@ export async function reentryBrief(
     const user = `Focus: ${focus?.label ?? "(none declared)"}\nBreadcrumbs:\n${lines}`;
     const text = await callModel(system, user);
     return text || fallback;
-  } catch {
+  } catch (e) {
+    console.error("[breadcrumb/ai] reentryBrief failed:", e);
     return fallback;
   }
 }
 
 function buildPlainRecap(focus: Focus | undefined, crumbs: Breadcrumb[]): string {
-  if (!focus && crumbs.length === 0) return "Welcome back. Nothing was logged while you were away.";
-  const head = focus?.label ? `You were working on "${focus.label}."` : "You were mid-something.";
+  if (!focus && crumbs.length === 0)
+    return "Welcome back. Nothing was logged while you were away.";
+  const head = focus?.label
+    ? `You were working on "${focus.label}."`
+    : "You were mid-something.";
   const noted = crumbs.filter((c) => c.text);
-  if (noted.length === 0) return `${head} You didn't leave a note — what was your next step?`;
+  if (noted.length === 0)
+    return `${head} You didn't leave a note — what was your next step?`;
   const last = noted[noted.length - 1];
   return `${head} Your last breadcrumb: "${last.text}." Pick up from there.`;
 }
@@ -133,7 +121,8 @@ export async function triageIdeas(ideas: Breadcrumb[]): Promise<string> {
       "Reply as short markdown with cluster headers and bullet points. Be concise.";
     const user = ideas.map((i) => `- ${i.text ?? "(no text)"}`).join("\n");
     return (await callModel(system, user)) || fallback;
-  } catch {
+  } catch (e) {
+    console.error("[breadcrumb/ai] triageIdeas failed:", e);
     return fallback;
   }
 }
@@ -155,7 +144,8 @@ export async function suggestSessionName(crumbs: Breadcrumb[]): Promise<string> 
       .join("\n");
     const name = await callModel(system, `Breadcrumbs:\n${lines}`);
     return name.replace(/^["'\s]+|["'\s]+$/g, "").toLowerCase();
-  } catch {
+  } catch (e) {
+    console.error("[breadcrumb/ai] suggestSessionName failed:", e);
     return "";
   }
 }
