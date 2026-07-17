@@ -2,13 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
-  height: 100%;
+/* Transparent base — allows frameless Tauri window to show through.
+   In browser dev (localhost:1420) the page is transparent over the Vite default. */
+html,
+body,
+#root {
+  background: transparent;
   margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* Prevent text selection on the overlay UI */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-/* When wrapped as a Tauri overlay window, keep the page background transparent
-   so only the buoy is visible. Toggle this class from Rust/JS as needed. */
-body.overlay {
-  background: transparent !important;
+/* Text inputs keep normal cursor/selection */
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
