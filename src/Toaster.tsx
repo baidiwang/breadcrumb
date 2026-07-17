@@ -169,7 +169,7 @@ function ReturnCard({
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-crumb-gold">
         where was i?
       </p>
-      <p className="text-sm leading-snug text-crumb-ink">{text}</p>
+      <p className="text-sm leading-snug text-crumb-ink line-clamp-4 break-words">{text}</p>
       <div className="mt-3 flex gap-2">
         <button
           onClick={onGotIt}
@@ -230,6 +230,35 @@ function NamingBanner({
   );
 }
 
+// ─── Dynamic window sizing ────────────────────────────────────────────────────
+// Sizes (logical px): window grows to fit each mode, re-anchored to bottom-right.
+const MODE_SIZES: Record<ToasterMode, [number, number]> = {
+  idle:           [280, 100],
+  "crumb-drop":   [280, 100],
+  capture:        [280, 240],
+  "return-peek":  [280, 320],
+  history:        [280, 480],
+};
+
+async function resizeAnchored(w: number, h: number): Promise<void> {
+  // @ts-expect-error injected by Tauri at runtime
+  if (typeof window === "undefined" || !window.__TAURI_INTERNALS__) return;
+  try {
+    const [{ getCurrentWindow }, { LogicalSize, LogicalPosition }] = await Promise.all([
+      import("@tauri-apps/api/window"),
+      import("@tauri-apps/api/dpi"),
+    ]);
+    const win = getCurrentWindow();
+    const margin = 16;
+    const sw = window.screen.width;
+    const sh = window.screen.height;
+    await win.setPosition(new LogicalPosition(sw - w - margin, sh - h - margin));
+    await win.setSize(new LogicalSize(w, h));
+  } catch {
+    // not in Tauri or permission denied — silently skip
+  }
+}
+
 // ─── Main Toaster component ───────────────────────────────────────────────────
 export function Toaster({
   focusLabel,
@@ -248,6 +277,14 @@ export function Toaster({
 }: ToasterProps) {
   const [mode, setMode] = useState<ToasterMode>("idle");
   const prevTickRef = useRef(crumbDropTick);
+
+  // Resize & re-anchor window whenever mode changes (or naming banner appears).
+  useEffect(() => {
+    let [w, h] = MODE_SIZES[mode];
+    // Naming banner shows above idle toaster — needs extra vertical space.
+    if (namingSuggestion && (mode === "idle" || mode === "crumb-drop")) h = 220;
+    void resizeAnchored(w, h);
+  }, [mode, namingSuggestion]);
 
   // Drive mode from parent state changes
   useEffect(() => {
@@ -299,11 +336,10 @@ export function Toaster({
   const dropping = mode === "crumb-drop";
 
   return (
-    // Full transparent overlay — pointer-events:none lets clicks pass through
-    // transparent areas to apps behind. Only interactive children re-enable.
-    <div className="fixed inset-0 pointer-events-none">
+    // Opaque cream window — sized exactly to visible content by resizeAnchored().
+    <div className="w-full h-full relative overflow-hidden">
       {/* All overlays anchor from bottom-right corner */}
-      <div className="absolute bottom-[96px] right-2 flex flex-col items-end gap-2 pointer-events-auto">
+      <div className="absolute bottom-[96px] right-2 flex flex-col items-end gap-2">
 
         {/* Naming suggestion (shows above other overlays) */}
         {namingSuggestion && !isCapturing && !isReturn && !isHistory && (
@@ -347,7 +383,7 @@ export function Toaster({
 
       {/* Focus label chip — shows in idle next to the toaster */}
       {focusLabel && mode === "idle" && (
-        <div className="absolute bottom-[22px] right-[92px] pointer-events-none">
+        <div className="absolute bottom-[22px] right-[92px]">
           <div className="rounded-full bg-crumb-cream/90 px-3 py-1 text-xs text-crumb-ink shadow ring-1 ring-crumb-fog max-w-[160px] truncate">
             → {focusLabel}
           </div>
@@ -363,7 +399,7 @@ export function Toaster({
         onClick={() => (isCapturing ? dismissCapture() : openCapture())}
         onContextMenu={handleContextMenu}
         className={[
-          "absolute bottom-2 right-2 w-20 h-20 pointer-events-auto",
+          "absolute bottom-2 right-2 w-20 h-20",
           "flex items-center justify-center",
           "rounded-full focus:outline-none",
           // Pulse ring when in capture mode

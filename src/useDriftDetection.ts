@@ -10,6 +10,9 @@
 
 import { useEffect, useRef } from "react";
 
+// 5 s in dev so you can test without waiting a full minute.
+export const DRIFT_THRESHOLD_MS = import.meta.env.DEV ? 5_000 : 60_000;
+
 type LeaveReason = "tab-hidden" | "window-blur" | "idle";
 
 export type DriftSignal = {
@@ -27,7 +30,7 @@ type Options = {
 
 export function useDriftDetection(opts: Options = {}) {
   const idleMs = opts.idleMs ?? 90_000;
-  const returnThreshold = opts.returnThresholdMs ?? 60_000;
+  const returnThreshold = opts.returnThresholdMs ?? DRIFT_THRESHOLD_MS;
 
   const leftAtRef = useRef<number | null>(null);
   const idleTimer = useRef<number | null>(null);

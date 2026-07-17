@@ -2,12 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Transparent base — allows frameless Tauri window to show through.
-   In browser dev (localhost:1420) the page is transparent over the Vite default. */
+/* Solid cream base for the opaque frameless window.
+   Sets background early (before JS) so the window never flashes white. */
 html,
 body,
 #root {
-  background: transparent;
+  background: #FAF7F0;
   margin: 0;
   padding: 0;
   height: 100%;
