@@ -1,12 +1,15 @@
 // Breadcrumb desktop (Tauri v2).
 //
-// The only native capability here is `foreground_app`: it returns the NAME of the
-// frontmost application (e.g. "Google Chrome"), never its contents. This is the
-// privacy-graded Level-1 signal described in BUOY_SPEC §4. On macOS it requires the
-// user to grant Accessibility permission once; until then it returns an empty string
-// and the app falls back to Level-0 (it still works).
+// Native capabilities:
+//   foreground_app  — returns the NAME of the frontmost app (never content).
+//                     Privacy-graded Level-1 signal. Returns "" when unavailable.
+//   setup           — positions the window at the screen's bottom-right corner
+//                     (320×420 logical px, 16px margin) then shows it, avoiding
+//                     a position-flash from the transparent frameless window.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use tauri::Manager;
 
 #[tauri::command]
 fn foreground_app() -> String {
@@ -53,7 +56,6 @@ fn get_foreground_app() -> Option<String> {
             return None;
         }
         let path = String::from_utf16_lossy(&buf[..len as usize]);
-        // return just the executable file name as the "app name"
         path.rsplit(['\\', '/']).next().map(|s| s.to_string())
     }
 }
@@ -64,10 +66,33 @@ fn get_foreground_app() -> Option<String> {
     None
 }
 
+// Position the window 16 logical px from the bottom-right of the current monitor.
+// Window config declares width=320 height=420; we use those as the reference size.
+fn anchor_bottom_right(win: &tauri::WebviewWindow) {
+    let Ok(Some(monitor)) = win.current_monitor() else { return };
+    let scale = monitor.scale_factor();
+    let phys = monitor.size();
+    // Convert screen physical size → logical coordinates
+    let lw = phys.width  as f64 / scale;
+    let lh = phys.height as f64 / scale;
+    let margin = 16.0_f64;
+    let x = lw - 320.0 - margin;
+    let y = lh - 420.0 - margin;
+    let _ = win.set_position(tauri::LogicalPosition::new(x, y));
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![foreground_app])
+        .setup(|app| {
+            let win = app.get_webview_window("main")
+                .expect("main webview window not found");
+            anchor_bottom_right(&win);
+            // Window starts hidden (visible: false in config) to avoid a position flash.
+            win.show()?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running breadcrumb");
 }
