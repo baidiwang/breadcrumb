@@ -1,11 +1,11 @@
 // Toaster — the buoy-only UI shell.
 //
 // States (ToasterMode):
-//   idle        → toaster bobs gently; focus chip shows beside it if a session is active
-//   capture     → click: input pops in above toaster for quick note / idea
-//   crumb-drop  → transient: particles fall from toaster body (auto-crumb or save)
-//   return-peek → drift return: re-entry card springs up from below
-//   history     → right-click: today's crumbs + recent sessions panel
+//   idle        → small 110×110 window, just the toaster
+//   capture     → input card pops in; window expands
+//   crumb-drop  → transient: particles fall, lever jiggles once
+//   return-peek → re-entry card; window expands; auto-dismisses after 12 s
+//   history     → date + crumb count + jump-back list; window expands
 
 import { useEffect, useRef, useState } from "react";
 import type { Focus } from "./types";
@@ -31,11 +31,19 @@ export interface ToasterProps {
 }
 
 // ─── SVG toaster body ────────────────────────────────────────────────────────
-// 72×72 viewBox, fills the 80×80 hit area (4px inset padding).
-// The side lever is a separate interactive element — click opens History.
-function ToasterSVG({ lit, onLeverClick }: { lit: boolean; onLeverClick?: () => void }) {
+// 72×72 viewBox centered in the 80×80 button (4 px inset on each side).
+// Lever is gold so it reads as interactive; jiggle fires on crumb-drop only.
+function ToasterSVG({
+  lit,
+  onLeverClick,
+  jiggling,
+}: {
+  lit: boolean;
+  onLeverClick?: () => void;
+  jiggling?: boolean;
+}) {
   const [leverHovered, setLeverHovered] = useState(false);
-  const leverFill = leverHovered ? "#2D5230" : "#4A6B4D";
+  const leverFill = leverHovered ? "#E8C170" : "#D9A85C";
 
   return (
     <svg viewBox="0 0 72 72" width={72} height={72} fill="none" aria-hidden>
@@ -57,21 +65,21 @@ function ToasterSVG({ lit, onLeverClick }: { lit: boolean; onLeverClick?: () => 
       <rect x="11" y="38.5" width="26" height="1.5" rx=".75" fill="#C4914A" opacity="0.65" />
       <rect x="11" y="43" width="20" height="1.5" rx=".75" fill="#C4914A" opacity="0.65" />
 
-      {/* Dial (moss stroke — no fill) */}
+      {/* Dial (moss stroke — chassis element, not interactive) */}
       <circle cx="52" cy="38" r="5.5" stroke="#4A6B4D" strokeWidth="1.5" />
       <line x1="52" y1="33" x2="52" y2="35.5" stroke="#4A6B4D" strokeWidth="1.5" strokeLinecap="round" />
 
-      {/* Lever — interactive: hover highlights, click opens History */}
+      {/* Lever — gold so it reads as "pull me"; jiggles after each crumb drop */}
       <g
         onClick={(e) => { e.stopPropagation(); onLeverClick?.(); }}
         onMouseEnter={() => setLeverHovered(true)}
         onMouseLeave={() => setLeverHovered(false)}
         style={{
           cursor: "pointer",
-          animation: leverHovered ? "lever-jiggle 0.38s ease-in-out" : undefined,
+          animation: jiggling ? "lever-jiggle 0.4s ease-in-out" : undefined,
         }}
       >
-        {/* Wider transparent hit area for easier clicking */}
+        {/* Wider transparent hit area */}
         <rect x="58" y="34" width="14" height="22" fill="transparent" />
         <rect x="63" y="40" width="3.5" height="11" rx="1.75" fill={leverFill} />
         <circle cx="64.75" cy="40" r="2.75" fill={leverFill} />
@@ -101,7 +109,8 @@ const PARTICLES = [
 
 function CrumbParticles({ tick }: { tick: number }) {
   return (
-    <div key={tick} className="absolute bottom-[72px] right-[4px] pointer-events-none w-[80px]">
+    // Positioned to start particles just above the bread slots in a 110×110 window.
+    <div key={tick} className="absolute top-[20px] right-[4px] pointer-events-none w-[80px]">
       <svg viewBox="0 0 80 40" width={80} height={40} fill="none" aria-hidden>
         {PARTICLES.map((p, i) => (
           <circle
@@ -110,9 +119,7 @@ function CrumbParticles({ tick }: { tick: number }) {
             cy={4}
             r={p.size}
             fill={p.color}
-            style={{
-              animation: `crumb-fall 0.65s ease-in ${p.delay} forwards`,
-            }}
+            style={{ animation: `crumb-fall 0.65s ease-in ${p.delay} forwards` }}
           />
         ))}
       </svg>
@@ -172,33 +179,37 @@ function CaptureOverlay({
 }
 
 // ─── Return card ─────────────────────────────────────────────────────────────
-function ReturnCard({
-  text,
-  onGotIt,
-  onAddNote,
-}: {
-  text: string;
-  onGotIt: () => void;
-  onAddNote: () => void;
-}) {
+// Auto-dismisses after 12 s with a gentle fade. "Got it" closes early.
+// "Add a note" removed — clicking the toaster is the note path.
+function ReturnCard({ text, onGotIt }: { text: string; onGotIt: () => void }) {
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFading(true);
+      setTimeout(onGotIt, 700);
+    }, 12_000);
+    return () => clearTimeout(t);
+  }, [onGotIt]);
+
   return (
-    <div className="animate-peek-in w-64 rounded-2xl bg-crumb-cream shadow-xl ring-1 ring-crumb-gold/30 p-4">
+    <div
+      className={[
+        "animate-peek-in w-64 rounded-2xl bg-crumb-cream shadow-xl ring-1 ring-crumb-gold/30 p-4",
+        "transition-opacity duration-700",
+        fading ? "opacity-0" : "opacity-100",
+      ].join(" ")}
+    >
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-crumb-gold">
         where was i?
       </p>
       <p className="text-sm leading-snug text-crumb-ink line-clamp-4 break-words">{text}</p>
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3">
         <button
           onClick={onGotIt}
           className="rounded-lg bg-crumb-gold px-3 py-1.5 text-xs font-semibold text-crumb-cream hover:bg-crumb-gold-dim transition-colors"
         >
           Got it
-        </button>
-        <button
-          onClick={onAddNote}
-          className="rounded-lg bg-crumb-fog px-3 py-1.5 text-xs text-crumb-ink-dim hover:text-crumb-ink transition-colors"
-        >
-          Add a note
         </button>
       </div>
     </div>
@@ -248,13 +259,13 @@ function NamingBanner({
 }
 
 // ─── Dynamic window sizing ────────────────────────────────────────────────────
-// Sizes (logical px): window grows to fit each mode, re-anchored to bottom-right.
+// Sizes (logical px): idle is tiny; window grows to fit open cards only.
 const MODE_SIZES: Record<ToasterMode, [number, number]> = {
-  idle:           [280, 100],
-  "crumb-drop":   [280, 100],
+  idle:           [110, 110],
+  "crumb-drop":   [110, 110],
   capture:        [280, 240],
-  "return-peek":  [280, 320],
-  history:        [280, 480],
+  "return-peek":  [280, 280],
+  history:        [280, 360],
 };
 
 async function resizeAnchored(w: number, h: number): Promise<void> {
@@ -278,7 +289,7 @@ async function resizeAnchored(w: number, h: number): Promise<void> {
 
 // ─── Main Toaster component ───────────────────────────────────────────────────
 export function Toaster({
-  focusLabel,
+  focusLabel: _focusLabel,
   hasActiveSession,
   isReturning,
   reentryText,
@@ -288,15 +299,16 @@ export function Toaster({
   onQuickNote,
   onDismissReturn,
   onStartSession,
-  onEndSession,
+  onEndSession: _onEndSession,
   onConfirmName,
   onDismissName,
 }: ToasterProps) {
   const [mode, setMode] = useState<ToasterMode>("idle");
   const prevTickRef = useRef(crumbDropTick);
+  const [leverJiggling, setLeverJiggling] = useState(false);
   const [hintVisible, setHintVisible] = useState(false);
 
-  // Show first-run hint once, auto-dismiss after 5 s, persist flag in IDB.
+  // Show first-run hint once; auto-dismiss after 5 s; persist flag in IDB.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     getFlag("hint-shown").then((seen) => {
@@ -310,33 +322,39 @@ export function Toaster({
     return () => clearTimeout(timer);
   }, []);
 
-  // Resize & re-anchor window whenever mode or overlays change.
+  // Resize + re-anchor whenever mode or transient overlays change.
   useEffect(() => {
     let [w, h] = MODE_SIZES[mode];
-    if (namingSuggestion && (mode === "idle" || mode === "crumb-drop")) h = 220;
-    if (hintVisible && mode === "idle") h = Math.max(h, 160);
+    if (namingSuggestion && (mode === "idle" || mode === "crumb-drop")) { w = 280; h = 220; }
+    if (hintVisible && mode === "idle") { w = 280; h = Math.max(h, 160); }
     void resizeAnchored(w, h);
   }, [mode, namingSuggestion, hintVisible]);
 
-  // Drive mode from parent state changes
+  // Drive mode from parent return-state.
   useEffect(() => {
-    if (isReturning && mode !== "return-peek") {
-      setMode("return-peek");
-    }
+    if (isReturning && mode !== "return-peek") setMode("return-peek");
   }, [isReturning]);
 
-  // Crumb-drop: fire animation on each tick, return to idle after
+  // Crumb-drop: jiggle lever once, play particle animation, return to idle.
   useEffect(() => {
     if (crumbDropTick === prevTickRef.current) return;
     prevTickRef.current = crumbDropTick;
     if (mode === "idle") {
       setMode("crumb-drop");
-      setTimeout(() => setMode("idle"), 750);
+      setLeverJiggling(true);
+      const t = setTimeout(() => { setMode("idle"); setLeverJiggling(false); }, 750);
+      return () => clearTimeout(t);
     }
-  }, [crumbDropTick]);
+  }, [crumbDropTick]); // mode is intentionally read via closure — only fires from idle
 
+  // Clicking the toaster: if returning, dismiss card and open capture; otherwise toggle capture.
   const openCapture = () => {
-    if (mode === "idle" || mode === "crumb-drop") setMode("capture");
+    if (mode === "return-peek") {
+      onDismissReturn();
+      setMode("capture");
+    } else if (mode === "idle" || mode === "crumb-drop") {
+      setMode("capture");
+    }
   };
 
   const dismissCapture = () => setMode("idle");
@@ -344,22 +362,13 @@ export function Toaster({
   const handleSave = async (text: string, asIdea: boolean) => {
     await onQuickNote(text, asIdea);
     setMode("crumb-drop");
-    setTimeout(() => setMode("idle"), 750);
+    setLeverJiggling(true);
+    setTimeout(() => { setMode("idle"); setLeverJiggling(false); }, 750);
   };
 
-  const handleGotIt = () => {
-    onDismissReturn();
-    setMode("idle");
-  };
+  const handleGotIt = () => { onDismissReturn(); setMode("idle"); };
 
-  const handleAddNoteFromReturn = () => {
-    onDismissReturn();
-    setMode("capture");
-  };
-
-  const handleLeverClick = () => {
-    setMode((prev) => (prev === "history" ? "idle" : "history"));
-  };
+  const handleLeverClick = () => setMode((prev) => (prev === "history" ? "idle" : "history"));
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -367,29 +376,24 @@ export function Toaster({
   };
 
   const isCapturing = mode === "capture";
-  const isReturn = mode === "return-peek";
-  const isHistory = mode === "history";
-  const dropping = mode === "crumb-drop";
+  const isReturn    = mode === "return-peek";
+  const isHistory   = mode === "history";
+  const dropping    = mode === "crumb-drop";
 
   return (
-    // Opaque cream window — sized exactly to visible content by resizeAnchored().
     <div className="w-full h-full relative overflow-hidden">
-      {/* All overlays anchor from bottom-right corner */}
+      {/* Overlays — anchor from bottom-right corner, stack upward */}
       <div className="absolute bottom-[96px] right-2 flex flex-col items-end gap-2">
 
-        {/* First-run hint — auto-dismisses after 5 s, never shows again */}
+        {/* First-run hint — auto-dismisses after 5 s */}
         {hintVisible && mode === "idle" && (
           <div className="animate-fade-in rounded-xl bg-crumb-ink/85 px-3.5 py-2.5 shadow-lg w-64">
-            <p className="text-[11px] text-crumb-cream/90 leading-snug">
-              click me to drop a note
-            </p>
-            <p className="text-[11px] text-crumb-cream/55 leading-snug mt-0.5">
-              pull the lever for history
-            </p>
+            <p className="text-[11px] text-crumb-cream/90 leading-snug">click me to drop a note</p>
+            <p className="text-[11px] text-crumb-cream/55 leading-snug mt-0.5">pull the lever for history</p>
           </div>
         )}
 
-        {/* Naming suggestion (shows above other overlays) */}
+        {/* AI naming banner */}
         {namingSuggestion && !isCapturing && !isReturn && !isHistory && (
           <NamingBanner
             suggestion={namingSuggestion}
@@ -398,67 +402,42 @@ export function Toaster({
           />
         )}
 
-        {/* Overlays — only one shows at a time */}
-        {isCapturing && (
-          <CaptureOverlay onSave={handleSave} onDismiss={dismissCapture} />
-        )}
+        {isCapturing && <CaptureOverlay onSave={handleSave} onDismiss={dismissCapture} />}
 
         {isReturn && reentryText && (
-          <ReturnCard
-            text={reentryText}
-            onGotIt={handleGotIt}
-            onAddNote={handleAddNoteFromReturn}
-          />
+          <ReturnCard text={reentryText} onGotIt={handleGotIt} />
         )}
 
         {isHistory && (
           <History
             recentFocuses={recentFocuses}
-            onStartSession={async (label) => {
-              await onStartSession(label);
-              setMode("idle");
-            }}
-            onEndSession={async () => {
-              await onEndSession();
-              setMode("idle");
-            }}
-            hasActiveSession={hasActiveSession}
-            focusLabel={focusLabel}
+            onStartSession={async (label) => { await onStartSession(label); setMode("idle"); }}
             onClose={() => setMode("idle")}
           />
         )}
       </div>
 
-      {/* Focus label chip — shows in idle next to the toaster */}
-      {focusLabel && mode === "idle" && (
-        <div className="absolute bottom-[22px] right-[92px]">
-          <div className="rounded-full bg-crumb-cream/90 px-3 py-1 text-xs text-crumb-ink shadow ring-1 ring-crumb-fog max-w-[160px] truncate">
-            → {focusLabel}
-          </div>
-        </div>
-      )}
-
-      {/* Crumb-drop particles */}
+      {/* Crumb-drop particles — positioned above bread slots in the 110×110 window */}
       {dropping && <CrumbParticles tick={crumbDropTick} />}
 
-      {/* The toaster itself — always visible, bottom-right */}
+      {/* The toaster — lift+brighten on hover; no permanent animation */}
       <button
-        aria-label={mode === "capture" ? "dismiss capture" : "open capture"}
+        aria-label={isCapturing ? "dismiss capture" : "open capture"}
         onClick={() => (isCapturing ? dismissCapture() : openCapture())}
         onContextMenu={handleContextMenu}
         className={[
           "absolute bottom-2 right-2 w-20 h-20",
           "flex items-center justify-center",
           "rounded-full focus:outline-none",
-          // Pulse ring when in capture mode
-          isCapturing
-            ? "ring-2 ring-crumb-gold/60 ring-offset-0 animate-ring-pulse"
-            : "",
+          "transition-all duration-150 hover:-translate-y-0.5 hover:brightness-110",
+          isCapturing ? "ring-2 ring-crumb-gold/60 ring-offset-0 animate-ring-pulse" : "",
         ].join(" ")}
       >
-        <div className={mode === "idle" ? "animate-bob" : ""}>
-          <ToasterSVG lit={hasActiveSession} onLeverClick={handleLeverClick} />
-        </div>
+        <ToasterSVG
+          lit={hasActiveSession}
+          onLeverClick={handleLeverClick}
+          jiggling={leverJiggling}
+        />
       </button>
     </div>
   );

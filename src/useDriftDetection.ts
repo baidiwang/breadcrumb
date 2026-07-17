@@ -10,8 +10,7 @@
 
 import { useEffect, useRef } from "react";
 
-// 5 s in dev so you can test without waiting a full minute.
-export const DRIFT_THRESHOLD_MS = import.meta.env.DEV ? 5_000 : 60_000;
+export const DRIFT_THRESHOLD_MS = 60_000;
 
 type LeaveReason = "tab-hidden" | "window-blur" | "idle";
 

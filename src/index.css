@@ -2,21 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Solid cream base for the opaque frameless window.
-   Sets background early (before JS) so the window never flashes white. */
-html,
-body,
-#root {
+/* html is fully transparent — the body's border-radius creates the rounded-corner
+   shape by clipping the cream fill, letting OS-level window transparency show through
+   in the four corner cutouts. */
+html {
+  background: transparent;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
   background: #FAF7F0;
+  border-radius: 16px;
   margin: 0;
   padding: 0;
   height: 100%;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
-  /* Prevent text selection on the overlay UI */
   user-select: none;
   -webkit-user-select: none;
+}
+
+#root {
+  background: transparent;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Text inputs keep normal cursor/selection */

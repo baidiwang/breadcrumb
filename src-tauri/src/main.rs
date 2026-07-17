@@ -67,7 +67,7 @@ fn get_foreground_app() -> Option<String> {
 }
 
 // Position the window 16 logical px from the bottom-right of the current monitor.
-// Window starts collapsed at 280×100; JS expands it per mode while keeping the
+// Window starts collapsed at 110×110; JS expands it per mode while keeping the
 // bottom-right anchor via resizeAnchored() in Toaster.tsx.
 fn anchor_bottom_right(win: &tauri::WebviewWindow) {
     let Ok(Some(monitor)) = win.current_monitor() else { return };
@@ -77,8 +77,8 @@ fn anchor_bottom_right(win: &tauri::WebviewWindow) {
     let lw = phys.width  as f64 / scale;
     let lh = phys.height as f64 / scale;
     let margin = 16.0_f64;
-    let x = lw - 280.0 - margin;
-    let y = lh - 100.0 - margin;
+    let x = lw - 110.0 - margin;
+    let y = lh - 110.0 - margin;
     let _ = win.set_position(tauri::LogicalPosition::new(x, y));
 }
 
