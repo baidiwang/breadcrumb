@@ -69,28 +69,55 @@ export async function classify(
 // --- 2. re-entry brief (★) -----------------------------------------------
 export async function reentryBrief(
   focus: Focus | undefined,
-  crumbs: Breadcrumb[]
+  crumbs: Breadcrumb[],
+  signal?: { awayMs?: number; foregroundApp?: string }
 ): Promise<string> {
   const fallback = buildPlainRecap(focus, crumbs);
   try {
     const system =
-      "You help an ADHD user get back into a task after being away. " +
-      "Given their declared focus and a list of breadcrumbs (some auto-captured with no text), " +
-      "write a warm, 2-3 sentence 'get back in' brief in the shape: " +
-      "what they were doing, where they paused, what the next step likely is. " +
-      "Be concrete, no fluff, no preamble.";
-    const lines = crumbs
-      .map((c) => {
-        const when = new Date(c.createdAt).toLocaleTimeString();
-        const away = c.signal?.awayMs
-          ? ` (away ${Math.round(c.signal.awayMs / 60000)}m)`
-          : "";
-        const app = c.signal?.foregroundApp ? ` -> ${c.signal.foregroundApp}` : "";
-        return `- ${when}${away}${app}: ${c.text ?? "(no note)"}`;
-      })
-      .join("\n");
-    const user = `Focus: ${focus?.label ?? "(none declared)"}\nBreadcrumbs:\n${lines}`;
-    const text = await callModel(system, user);
+      "You are a warm re-entry assistant for an ADHD user returning after being away.\n\n" +
+      "STRICT RULES — follow every one without exception:\n" +
+      "1. NEVER ask the user a question. Not even rhetorically. Every sentence ends with a period.\n" +
+      "2. NEVER speculate about what the user was doing beyond the exact facts listed below.\n" +
+      "3. Report only what the signals show: time away, app names, written notes.\n" +
+      "4. When written notes are absent, state the time and app seen, then suggest ONE\n" +
+      "   concrete, low-effort next action (e.g. \"Reopen Chrome to pick up where you left off.\").\n" +
+      "5. Maximum 3 sentences. Warm, calm tone. No preamble, no hedging phrases like 'it seems'.";
+
+    // Resolve return signal — prefer explicit arg, fall back to last crumb with signal data.
+    const awayMs =
+      signal?.awayMs ??
+      [...crumbs].reverse().find((c) => c.signal?.awayMs)?.signal?.awayMs ??
+      0;
+    const appSeen =
+      signal?.foregroundApp ??
+      [...crumbs].reverse().find((c) => c.signal?.foregroundApp)?.signal?.foregroundApp;
+
+    const secs = Math.round(awayMs / 1000);
+    const awayStr =
+      secs < 90 ? `${secs} seconds` : `${Math.round(awayMs / 60000)} minutes`;
+
+    const facts: string[] = [
+      `Focus label: ${focus?.label ?? "none"}`,
+      `Time away: ${awayStr}`,
+    ];
+    if (appSeen) facts.push(`App when returning: ${appSeen}`);
+
+    const noted = crumbs.filter((c) => c.text);
+    if (noted.length > 0) {
+      facts.push("Written notes (oldest first):");
+      for (const c of noted.slice(-5)) {
+        const t = new Date(c.createdAt).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        facts.push(`  ${t}: "${c.text}"`);
+      }
+    } else {
+      facts.push("Written notes: none");
+    }
+
+    const text = await callModel(system, facts.join("\n"));
     return text || fallback;
   } catch (e) {
     console.error("[breadcrumb/ai] reentryBrief failed:", e);

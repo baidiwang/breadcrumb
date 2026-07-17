@@ -97,7 +97,7 @@ export default function App() {
       await saveBreadcrumb(marker);
 
       const crumbs = f ? await breadcrumbsForFocus(f.id) : [];
-      const text = await reentryBrief(f, crumbs);
+      const text = await reentryBrief(f, crumbs, sig);
       setReentryText(text);
       if (f) {
         await saveBrief({ id: uid(), focusId: f.id, generatedAt: Date.now(), text });

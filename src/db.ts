@@ -12,21 +12,28 @@ interface BreadcrumbDB extends DBSchema {
     indexes: { byCreatedAt: number; byFocus: string };
   };
   briefs: { key: string; value: ReentryBrief; indexes: { byGeneratedAt: number } };
+  // Out-of-line key store for boolean app flags (e.g. first-run hints).
+  flags: { key: string; value: boolean };
 }
 
 let _db: Promise<IDBPDatabase<BreadcrumbDB>> | null = null;
 
 function db() {
   if (!_db) {
-    _db = openDB<BreadcrumbDB>("breadcrumb", 1, {
-      upgrade(d) {
-        const f = d.createObjectStore("focuses", { keyPath: "id" });
-        f.createIndex("byStatus", "status");
-        const b = d.createObjectStore("breadcrumbs", { keyPath: "id" });
-        b.createIndex("byCreatedAt", "createdAt");
-        b.createIndex("byFocus", "focusId");
-        const br = d.createObjectStore("briefs", { keyPath: "id" });
-        br.createIndex("byGeneratedAt", "generatedAt");
+    _db = openDB<BreadcrumbDB>("breadcrumb", 2, {
+      upgrade(d, oldVersion) {
+        if (oldVersion < 1) {
+          const f = d.createObjectStore("focuses", { keyPath: "id" });
+          f.createIndex("byStatus", "status");
+          const b = d.createObjectStore("breadcrumbs", { keyPath: "id" });
+          b.createIndex("byCreatedAt", "createdAt");
+          b.createIndex("byFocus", "focusId");
+          const br = d.createObjectStore("briefs", { keyPath: "id" });
+          br.createIndex("byGeneratedAt", "generatedAt");
+        }
+        if (oldVersion < 2) {
+          d.createObjectStore("flags");
+        }
       },
     });
   }
@@ -64,4 +71,20 @@ export async function recentBreadcrumbs(limit = 50): Promise<Breadcrumb[]> {
 // --- briefs ---
 export async function saveBrief(b: ReentryBrief) {
   return (await db()).put("briefs", b);
+}
+
+// --- flags (one-time booleans, e.g. first-run hints) ---
+export async function getFlag(key: string): Promise<boolean> {
+  try {
+    return (await (await db()).get("flags", key)) ?? false;
+  } catch {
+    return false;
+  }
+}
+export async function setFlag(key: string, value: boolean): Promise<void> {
+  try {
+    await (await db()).put("flags", value, key);
+  } catch {
+    // non-fatal
+  }
 }

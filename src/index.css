@@ -26,3 +26,10 @@ textarea {
   -webkit-user-select: text;
   cursor: text;
 }
+
+/* Lever jiggle — plays once on hover via inline animation style */
+@keyframes lever-jiggle {
+  0%, 100% { transform: translateY(0px); }
+  30%       { transform: translateY(-3px); }
+  65%       { transform: translateY(1.5px); }
+}

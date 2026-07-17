@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Focus } from "./types";
 import { History } from "./History";
+import { getFlag, setFlag } from "./db";
 
 export type ToasterMode = "idle" | "capture" | "crumb-drop" | "return-peek" | "history";
 
@@ -31,7 +32,11 @@ export interface ToasterProps {
 
 // ─── SVG toaster body ────────────────────────────────────────────────────────
 // 72×72 viewBox, fills the 80×80 hit area (4px inset padding).
-function ToasterSVG({ lit }: { lit: boolean }) {
+// The side lever is a separate interactive element — click opens History.
+function ToasterSVG({ lit, onLeverClick }: { lit: boolean; onLeverClick?: () => void }) {
+  const [leverHovered, setLeverHovered] = useState(false);
+  const leverFill = leverHovered ? "#2D5230" : "#4A6B4D";
+
   return (
     <svg viewBox="0 0 72 72" width={72} height={72} fill="none" aria-hidden>
       {/* Drop shadow */}
@@ -56,9 +61,21 @@ function ToasterSVG({ lit }: { lit: boolean }) {
       <circle cx="52" cy="38" r="5.5" stroke="#4A6B4D" strokeWidth="1.5" />
       <line x1="52" y1="33" x2="52" y2="35.5" stroke="#4A6B4D" strokeWidth="1.5" strokeLinecap="round" />
 
-      {/* Lever */}
-      <rect x="63" y="40" width="3.5" height="11" rx="1.75" fill="#4A6B4D" />
-      <circle cx="64.75" cy="40" r="2.75" fill="#4A6B4D" />
+      {/* Lever — interactive: hover highlights, click opens History */}
+      <g
+        onClick={(e) => { e.stopPropagation(); onLeverClick?.(); }}
+        onMouseEnter={() => setLeverHovered(true)}
+        onMouseLeave={() => setLeverHovered(false)}
+        style={{
+          cursor: "pointer",
+          animation: leverHovered ? "lever-jiggle 0.38s ease-in-out" : undefined,
+        }}
+      >
+        {/* Wider transparent hit area for easier clicking */}
+        <rect x="58" y="34" width="14" height="22" fill="transparent" />
+        <rect x="63" y="40" width="3.5" height="11" rx="1.75" fill={leverFill} />
+        <circle cx="64.75" cy="40" r="2.75" fill={leverFill} />
+      </g>
 
       {/* Bread slots */}
       <rect x="14" y="5" width="14" height="18" rx="4" fill="#2D2010" />
@@ -277,14 +294,29 @@ export function Toaster({
 }: ToasterProps) {
   const [mode, setMode] = useState<ToasterMode>("idle");
   const prevTickRef = useRef(crumbDropTick);
+  const [hintVisible, setHintVisible] = useState(false);
 
-  // Resize & re-anchor window whenever mode changes (or naming banner appears).
+  // Show first-run hint once, auto-dismiss after 5 s, persist flag in IDB.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    getFlag("hint-shown").then((seen) => {
+      if (seen) return;
+      setHintVisible(true);
+      timer = setTimeout(() => {
+        setHintVisible(false);
+        void setFlag("hint-shown", true);
+      }, 5000);
+    });
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Resize & re-anchor window whenever mode or overlays change.
   useEffect(() => {
     let [w, h] = MODE_SIZES[mode];
-    // Naming banner shows above idle toaster — needs extra vertical space.
     if (namingSuggestion && (mode === "idle" || mode === "crumb-drop")) h = 220;
+    if (hintVisible && mode === "idle") h = Math.max(h, 160);
     void resizeAnchored(w, h);
-  }, [mode, namingSuggestion]);
+  }, [mode, namingSuggestion, hintVisible]);
 
   // Drive mode from parent state changes
   useEffect(() => {
@@ -325,6 +357,10 @@ export function Toaster({
     setMode("capture");
   };
 
+  const handleLeverClick = () => {
+    setMode((prev) => (prev === "history" ? "idle" : "history"));
+  };
+
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     setMode((prev) => (prev === "history" ? "idle" : "history"));
@@ -340,6 +376,18 @@ export function Toaster({
     <div className="w-full h-full relative overflow-hidden">
       {/* All overlays anchor from bottom-right corner */}
       <div className="absolute bottom-[96px] right-2 flex flex-col items-end gap-2">
+
+        {/* First-run hint — auto-dismisses after 5 s, never shows again */}
+        {hintVisible && mode === "idle" && (
+          <div className="animate-fade-in rounded-xl bg-crumb-ink/85 px-3.5 py-2.5 shadow-lg w-64">
+            <p className="text-[11px] text-crumb-cream/90 leading-snug">
+              click me to drop a note
+            </p>
+            <p className="text-[11px] text-crumb-cream/55 leading-snug mt-0.5">
+              pull the lever for history
+            </p>
+          </div>
+        )}
 
         {/* Naming suggestion (shows above other overlays) */}
         {namingSuggestion && !isCapturing && !isReturn && !isHistory && (
@@ -409,7 +457,7 @@ export function Toaster({
         ].join(" ")}
       >
         <div className={mode === "idle" ? "animate-bob" : ""}>
-          <ToasterSVG lit={hasActiveSession} />
+          <ToasterSVG lit={hasActiveSession} onLeverClick={handleLeverClick} />
         </div>
       </button>
     </div>
