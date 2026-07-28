@@ -3,10 +3,11 @@
 **A low-friction working-memory companion for ADHD brains.**
 Leave a trail the instant your attention drifts — find your way back when you return.
 
-Breadcrumb is a small, warm buoy that floats at the edge of your screen. When you
-switch away from what you were doing, it quietly drops a marker — **no typing
-needed**. When you come back, it offers a gentle "where was I?" brief that
-reconstructs what you were doing, where you paused, and what comes next.
+Breadcrumb is a tiny animated toaster character that floats at the corner of your
+screen as a true desktop pet. When you switch away from what you were doing, it
+quietly drops a marker — **no typing needed**. When you come back, it offers a
+gentle "where was I?" brief that reconstructs what you were doing, where you
+paused, and what comes next.
 
 > Built from a real personal pain point: starting task A, glancing at task B, and
 > losing A entirely. Breadcrumb's whole job is to get you back to A.
@@ -34,8 +35,7 @@ window contents. Instead it's an *externalized working memory*:
 
 ## Privacy-graded tracking
 
-Breadcrumb deliberately ships with the most privacy-preserving signal by default,
-and stronger signals are opt-in:
+Breadcrumb deliberately ships with the most privacy-preserving signal by default:
 
 | Level | Signal | Where | Privacy |
 |-------|--------|-------|---------|
@@ -43,34 +43,58 @@ and stronger signals are opt-in:
 | **1** (opt-in) | foreground app **name** only (e.g. "Figma") — never content | desktop | name-only |
 | **2** (future) | user-authorized sources (history, paste) | opt-in | explicit consent |
 
-The MVP runs entirely on Level 0; the desktop build adds Level 1.
+The MVP runs entirely on Level 0; the desktop build adds Level 1 via AppKit
+(`NSWorkspace.frontmostApplication`) — it reads only the app name, never the
+window title or content. No Accessibility permission required.
 
 ---
 
 ## Tech stack
 
-- **Frontend:** React + TypeScript + Tailwind (Vite)
-- **Desktop shell:** Tauri v2 (Rust + system webview — small bundle, low memory for an always-on app)
+- **Frontend:** React + TypeScript + Tailwind v3 (Vite)
+- **Desktop shell:** Tauri v2 (Rust + WKWebView — small bundle, low memory for an always-on app)
 - **Storage:** local-first via IndexedDB (`idb`) — no account, no cloud for MVP
-- **AI:** Anthropic API, via a serverless proxy (web) or OS-keychain-backed command (desktop) so the key never ships in the client
+- **Fonts:** Nunito + Quicksand via `@fontsource` (self-hosted, no CDN request)
+- **AI:** Anthropic Claude, routed through a Vite dev proxy locally or a Vercel
+  edge function in production — the API key never enters the browser bundle
 
-### Architecture at a glance
+### Desktop pet window
+
+The app runs as a frameless, fully transparent window (`decorations: false`,
+`transparent: true`, `macOSPrivateApi: true`). On macOS, enabling
+`macOSPrivateApi` is required — it activates wry's `drawsBackground = NO` call
+on the underlying WKWebView, which is what actually turns the white background
+off. The `alwaysOnTop` flag keeps the toaster visible over other apps.
+
+The toaster SVG character (168×184 viewBox, rendered at 96×105 px) paints its
+own pixels. All surrounding areas are alpha=0 — macOS passes clicks through those
+regions automatically for non-opaque windows. The window can be repositioned by
+dragging the toaster, using `startDragging()` from `@tauri-apps/api/window`.
+When cards open (capture / return / history), the window resizes while keeping
+its bottom-right corner anchored so the toaster doesn't jump.
+
+### Architecture
 
 ```
 src/
-  Buoy.tsx              the floating object (idle / capture / return states)
-  App.tsx               wires the core loop
+  App.tsx               wires the core loop + session/drift state
+  Toaster.tsx           the desktop pet — idle/capture/return/history modes,
+                        SVG character art, window resize anchored to bottom-right
+  History.tsx           compact focus history panel
   useDriftDetection.ts  the heart: detects "you left" with zero user action
-  ai.ts                 classify / re-entry brief / idea triage (graceful fallbacks)
-  db.ts                 IndexedDB layer
-  shortcuts.ts          global hotkey (desktop) to summon capture
-  types.ts              data model
+  ai.ts                 classify / re-entry brief / session naming (graceful fallbacks)
+  db.ts                 IndexedDB layer (focuses, breadcrumbs, briefs)
+  shortcuts.ts          global hotkey (Cmd/Ctrl+Shift+Space) to summon capture
+  types.ts              Focus, Breadcrumb, Brief data model
+
 src-tauri/
-  src/main.rs           native `foreground_app` (name only) for Level-1 signal
-  tauri.conf.json       window: always-on-top, etc.
-  capabilities/         Tauri v2 permissions
+  src/main.rs           foreground_app command (Level-1, name-only via AppKit)
+                        + set_cursor_ignore + bottom-right anchor on startup
+  tauri.conf.json       window config: transparent, always-on-top, no decorations
+  capabilities/         Tauri v2 permission declarations
+
 api/
-  ai.ts                 Vercel serverless proxy to Anthropic (keeps key server-side)
+  ai.ts                 Vercel edge function proxy to Anthropic (key server-side)
 ```
 
 ---
@@ -79,8 +103,8 @@ api/
 
 ### Prerequisites
 - Node 18+ and npm
-- Rust toolchain (for the desktop build) — https://rustup.rs
-- Platform deps for Tauri — see https://tauri.app/start/prerequisites/
+- Rust toolchain — https://rustup.rs
+- Platform deps for Tauri — https://tauri.app/start/prerequisites/
 
 ### Install & run (desktop)
 
@@ -97,18 +121,30 @@ npm run dev      # http://localhost:1420
 ```
 
 ### Wire up AI (optional but recommended)
+
 1. Get an Anthropic API key.
-2. For web: deploy to Vercel and set `ANTHROPIC_API_KEY` in project env; the
-   frontend talks to `/api/ai`.
-3. For local dev: copy `.env.example` → `.env.local` and point `VITE_AI_PROXY`
-   at your proxy. Without a proxy, the app still runs — every AI call falls back
-   gracefully (e.g. re-entry shows a plain chronological recap).
+2. Copy `.env.example` → `.env.local` and set `ANTHROPIC_API_KEY`.
+3. Vite's dev server proxies `/api/ai` to Anthropic from Node — the key never
+   enters the browser bundle.
+4. For production: deploy to Vercel and set `ANTHROPIC_API_KEY` in project env;
+   the `api/ai.ts` edge function handles the proxy there.
+
+Without AI configured, the app still runs — every call falls back gracefully
+(re-entry shows a plain chronological recap instead of a generated brief).
 
 ### First-run notes
-- **macOS Level-1:** reading the foreground app name needs Accessibility
-  permission (System Settings → Privacy & Security → Accessibility). Until granted,
-  the app silently runs at Level 0.
-- **Global shortcut:** `Cmd/Ctrl + Shift + Space` summons quick capture.
+
+- **Global shortcut:** `Cmd/Ctrl+Shift+Space` summons quick capture from anywhere
+  on the desktop (registered via `tauri-plugin-global-shortcut`).
+- **Dragging:** click and drag the toaster to reposition the pet anywhere on screen.
+- **Context menu / lever:** right-click the toaster or click the gold lever to open
+  the focus history panel.
+
+### Dev testing shortcut
+
+In dev builds only (`import.meta.env.DEV`), **Cmd+Shift+R** instantly triggers the
+"Where was I?" return flow with a simulated 90 s drift — no need to wait 60 s for
+the real idle threshold. This shortcut is tree-shaken out of production builds.
 
 ---
 
@@ -117,8 +153,8 @@ npm run dev      # http://localhost:1420
 - [ ] Idea bucket view + AI triage/clustering
 - [ ] Voice capture (Web Speech) for the idea button
 - [ ] Re-entry brief history / timeline
-- [ ] Menu-bar / tray mode with click-through transparency
 - [ ] Per-focus stats (how often each task got interrupted)
+- [ ] Production desktop: route AI key through OS keychain via a Rust command
 
 ---
 
