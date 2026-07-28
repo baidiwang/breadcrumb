@@ -35,6 +35,29 @@ export default function App() {
   const namingFocusRef = useRef(namingFocus);
   namingFocusRef.current = namingFocus;
 
+  // Stable ref so useDriftDetection and the dev shortcut share identical logic
+  const handleReturn = useRef<(sig: DriftSignal) => Promise<void>>();
+  handleReturn.current = async (sig: DriftSignal) => {
+    const f = focusRef.current;
+    const marker: Breadcrumb = {
+      id: uid(),
+      createdAt: Date.now(),
+      focusId: f?.id,
+      trigger: "auto-idle",
+      kind: "breadcrumb",
+      signal: { awayMs: sig.awayMs, foregroundApp: sig.foregroundApp },
+    };
+    await saveBreadcrumb(marker);
+    const crumbs = f ? await breadcrumbsForFocus(f.id) : [];
+    const text = await reentryBrief(f, crumbs, sig);
+    setReentryText(text);
+    if (f) {
+      await saveBrief({ id: uid(), focusId: f.id, generatedAt: Date.now(), text });
+      if (!f.label && crumbs.length > 0) void tryNameSession(f, crumbs);
+    }
+    setIsReturning(true);
+  };
+
   useEffect(() => {
     getActiveFocus().then(setFocus);
     void refreshRecent();
@@ -84,28 +107,23 @@ export default function App() {
       });
       setCrumbDropTick((t) => t + 1);
     },
-    onReturn: async (sig: DriftSignal) => {
-      const f = focusRef.current;
-      const marker: Breadcrumb = {
-        id: uid(),
-        createdAt: Date.now(),
-        focusId: f?.id,
-        trigger: "auto-idle",
-        kind: "breadcrumb",
-        signal: { awayMs: sig.awayMs, foregroundApp: sig.foregroundApp },
-      };
-      await saveBreadcrumb(marker);
-
-      const crumbs = f ? await breadcrumbsForFocus(f.id) : [];
-      const text = await reentryBrief(f, crumbs, sig);
-      setReentryText(text);
-      if (f) {
-        await saveBrief({ id: uid(), focusId: f.id, generatedAt: Date.now(), text });
-        if (!f.label && crumbs.length > 0) void tryNameSession(f, crumbs);
-      }
-      setIsReturning(true);
-    },
+    onReturn: (sig) => handleReturn.current!(sig),
   });
+
+  // Dev-only: Cmd+Shift+R triggers the return flow with a fake 90 s drift so
+  // the "Where was I?" card can be tested without waiting for real idle time.
+  // import.meta.env.DEV is false in production builds — Vite tree-shakes this out.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey && e.shiftKey && e.key === "R") {
+        e.preventDefault();
+        void handleReturn.current!({ reason: "tab-hidden", awayMs: 90_000 });
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // --- Session lifecycle ---
   const startSession = async (label?: string) => {
