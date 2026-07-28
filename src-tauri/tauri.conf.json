@@ -13,13 +13,13 @@
     "windows": [
       {
         "title": "Breadcrumb",
-        "width": 140,
-        "height": 144,
+        "width": 120,
+        "height": 122,
         "resizable": false,
         "fullscreen": false,
         "alwaysOnTop": true,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "skipTaskbar": true,
         "visible": false
       }

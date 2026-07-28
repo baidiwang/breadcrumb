@@ -2,11 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* html is fully transparent — the body's border-radius creates the rounded-corner
-   shape by clipping the cream fill, letting OS-level window transparency show through
-   in the four corner cutouts. */
 html {
-  background: transparent;
+  background: #FAF7F0;
   height: 100%;
   overflow: hidden;
 }

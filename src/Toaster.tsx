@@ -67,8 +67,8 @@ function ToasterSVG({
   return (
     <svg
       viewBox="0 0 168 184"
-      width={112}
-      height={123}
+      width={96}
+      height={105}
       fill="none"
       aria-hidden
       style={{ overflow: "visible" }}
@@ -311,10 +311,10 @@ function NamingBanner({
 // ─── Dynamic window sizing ────────────────────────────────────────────────────
 // Sizes (logical px): idle is tiny; window grows to fit open cards only.
 const MODE_SIZES: Record<ToasterMode, [number, number]> = {
-  idle:           [140, 144],
-  "crumb-drop":   [140, 144],
-  capture:        [280, 280],
-  "return-peek":  [280, 320],
+  idle:           [120, 122],
+  "crumb-drop":   [120, 122],
+  capture:        [280, 260],
+  "return-peek":  [280, 300],
   history:        [280, 400],
 };
 
@@ -433,7 +433,7 @@ export function Toaster({
   return (
     <div className="w-full h-full relative overflow-hidden">
       {/* Overlays — anchor from bottom-right corner, stack upward */}
-      <div className="absolute bottom-[136px] right-2 flex flex-col items-end gap-2">
+      <div className="absolute bottom-[116px] right-2 flex flex-col items-end gap-2">
 
         {/* First-run hint — auto-dismisses after 5 s */}
         {hintVisible && mode === "idle" && (
@@ -473,7 +473,7 @@ export function Toaster({
         onClick={() => (isCapturing ? dismissCapture() : openCapture())}
         onContextMenu={handleContextMenu}
         className={[
-          "absolute bottom-2 right-2 w-[112px] h-[123px]",
+          "absolute bottom-2 right-2 w-[96px] h-[105px]",
           "flex items-center justify-center",
           "rounded-3xl focus:outline-none",
           "transition-all duration-150 hover:-translate-y-0.5 hover:brightness-110",
