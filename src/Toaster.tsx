@@ -1,7 +1,7 @@
 // Toaster — the buoy-only UI shell.
 //
 // States (ToasterMode):
-//   idle        → small 110×110 window, just the toaster
+//   idle        → small 140×144 window, just the toaster character
 //   capture     → input card pops in; window expands
 //   crumb-drop  → transient: particles fall, lever jiggles once
 //   return-peek → re-entry card; window expands; auto-dismisses after 12 s
@@ -30,100 +30,150 @@ export interface ToasterProps {
   onDismissName: () => void;
 }
 
-// ─── SVG toaster body ────────────────────────────────────────────────────────
-// 72×72 viewBox centered in the 80×80 button (4 px inset on each side).
-// Lever is gold so it reads as interactive; jiggle fires on crumb-drop only.
+// ─── SVG toaster character ───────────────────────────────────────────────────
+// 168×184 viewBox rendered at 112×123. Toast slice pops on capture/return,
+// leans on return-peek. Crumbs animate inside the SVG from the slice base.
+// Lever (gold) lifts when popped and jiggles once after each crumb drop.
+
+const CRUMB_DEFS = [
+  { id: 0, dx: -14, dy: 30, delay: 0 },
+  { id: 1, dx:   2, dy: 34, delay: 85 },
+  { id: 2, dx:  -6, dy: 26, delay: 50 },
+  { id: 3, dx:  14, dy: 32, delay: 130 },
+];
+
+const SPRING = "cubic-bezier(0.34, 1.56, 0.64, 1)";
+
 function ToasterSVG({
   lit,
   onLeverClick,
   jiggling,
+  popped,
+  leaning,
+  showCrumbs,
+  crumbKey,
 }: {
   lit: boolean;
   onLeverClick?: () => void;
   jiggling?: boolean;
+  popped?: boolean;
+  leaning?: boolean;
+  showCrumbs?: boolean;
+  crumbKey?: number;
 }) {
   const [leverHovered, setLeverHovered] = useState(false);
   const leverFill = leverHovered ? "#E8C170" : "#D9A85C";
 
   return (
-    <svg viewBox="0 0 72 72" width={72} height={72} fill="none" aria-hidden>
-      {/* Drop shadow */}
-      <ellipse cx="36" cy="65" rx="22" ry="3.5" fill="#1C1410" opacity="0.10" />
+    <svg
+      viewBox="0 0 168 184"
+      width={112}
+      height={123}
+      fill="none"
+      aria-hidden
+      style={{ overflow: "visible" }}
+    >
+      {/* ground shadow */}
+      <ellipse cx="84" cy="169" rx="60" ry="7" fill="#4A6B4D" opacity="0.1" />
 
-      {/* Feet */}
-      <rect x="13" y="56" width="9" height="7" rx="3.5" fill="#C4914A" />
-      <rect x="50" y="56" width="9" height="7" rx="3.5" fill="#C4914A" />
-
-      {/* Body */}
-      <rect x="6" y="18" width="60" height="39" rx="10" fill="#D9A85C" />
-
-      {/* Top highlight stripe */}
-      <rect x="11" y="23" width="50" height="3" rx="1.5" fill="#FAF7F0" opacity="0.28" />
-
-      {/* Ventilation lines */}
-      <rect x="11" y="34" width="32" height="1.5" rx=".75" fill="#C4914A" opacity="0.65" />
-      <rect x="11" y="38.5" width="26" height="1.5" rx=".75" fill="#C4914A" opacity="0.65" />
-      <rect x="11" y="43" width="20" height="1.5" rx=".75" fill="#C4914A" opacity="0.65" />
-
-      {/* Dial (moss stroke — chassis element, not interactive) */}
-      <circle cx="52" cy="38" r="5.5" stroke="#4A6B4D" strokeWidth="1.5" />
-      <line x1="52" y1="33" x2="52" y2="35.5" stroke="#4A6B4D" strokeWidth="1.5" strokeLinecap="round" />
-
-      {/* Lever — gold so it reads as "pull me"; jiggles after each crumb drop */}
-      <g
-        onClick={(e) => { e.stopPropagation(); onLeverClick?.(); }}
-        onMouseEnter={() => setLeverHovered(true)}
-        onMouseLeave={() => setLeverHovered(false)}
-        style={{
-          cursor: "pointer",
-          animation: jiggling ? "lever-jiggle 0.4s ease-in-out" : undefined,
-        }}
-      >
-        {/* Wider transparent hit area */}
-        <rect x="58" y="34" width="14" height="22" fill="transparent" />
-        <rect x="63" y="40" width="3.5" height="11" rx="1.75" fill={leverFill} />
-        <circle cx="64.75" cy="40" r="2.75" fill={leverFill} />
+      {/* grass tufts */}
+      <g stroke="#4A6B4D" strokeWidth="2.4" strokeLinecap="round" opacity="0.45">
+        <path d="M24 168c4-9 5-15 4-21" />
+        <path d="M34 168c1-8 4-13 9-17" />
+        <path d="M144 168c-4-9-5-14-4-20" />
+        <path d="M134 168c-1-7-4-12-9-16" />
       </g>
 
-      {/* Bread slots */}
-      <rect x="14" y="5" width="14" height="18" rx="4" fill="#2D2010" />
-      <rect x="44" y="5" width="14" height="18" rx="4" fill="#2D2010" />
+      {/* toast slice — pops up on capture/return, leans on return-peek */}
+      <g
+        style={{
+          transform: popped
+            ? leaning
+              ? "translateY(-40px) rotate(-11deg)"
+              : "translateY(-46px) rotate(2deg)"
+            : "translateY(0) rotate(0deg)",
+          transformOrigin: "84px 120px",
+          transition: `transform 0.62s ${SPRING}`,
+        }}
+      >
+        <g className={popped ? "" : "animate-breathe"}>
+          {/* bread shape */}
+          <path
+            d="M60 66c0-9 5-14 12-14h24c7 0 12 5 12 14v52H60z"
+            fill="#E8D5A8"
+            stroke="#4A6B4D"
+            strokeWidth="3.2"
+            strokeLinejoin="round"
+          />
+          {/* crust highlight */}
+          <path d="M66 74c0-5 3-8 8-8h20c5 0 8 3 8 8v10H66z" fill="#D9A85C" opacity="0.55" />
+          {/* eyes */}
+          <circle cx="75" cy="90" r="3" fill="#4A6B4D" />
+          <circle cx="93" cy="90" r="3" fill="#4A6B4D" />
+          {/* mouth — wider smile when popped */}
+          <path
+            d={popped ? "M76 99q8 8 16 0" : "M77 99q7 5 14 0"}
+            stroke="#4A6B4D"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            fill="none"
+          />
+          {/* cheek blush */}
+          <circle cx="68" cy="97" r="3.4" fill="#C4914A" opacity="0.35" />
+          <circle cx="100" cy="97" r="3.4" fill="#C4914A" opacity="0.35" />
+        </g>
 
-      {/* Slot inner glint */}
-      <rect x="17.5" y="8" width="4" height="10" rx="2" fill="#D9A85C" opacity={lit ? 0.45 : 0.15} />
-      <rect x="47.5" y="8" width="4" height="10" rx="2" fill="#D9A85C" opacity={lit ? 0.45 : 0.15} />
-
-      {/* Lit indicator dot (active session) */}
-      {lit && <circle cx="25" cy="48" r="3" fill="#FAF7F0" opacity="0.55" />}
-    </svg>
-  );
-}
-
-// ─── Crumb-drop particles ─────────────────────────────────────────────────────
-const PARTICLES = [
-  { x: 18, delay: "0ms",   size: 2.5, color: "#D9A85C" },
-  { x: 30, delay: "90ms",  size: 2,   color: "#C4914A" },
-  { x: 44, delay: "50ms",  size: 2.5, color: "#D9A85C" },
-  { x: 54, delay: "130ms", size: 1.5, color: "#C4914A" },
-];
-
-function CrumbParticles({ tick }: { tick: number }) {
-  return (
-    // Positioned to start particles just above the bread slots in a 110×110 window.
-    <div key={tick} className="absolute top-[20px] right-[4px] pointer-events-none w-[80px]">
-      <svg viewBox="0 0 80 40" width={80} height={40} fill="none" aria-hidden>
-        {PARTICLES.map((p, i) => (
-          <circle
-            key={i}
-            cx={p.x}
-            cy={4}
-            r={p.size}
-            fill={p.color}
-            style={{ animation: `crumb-fall 0.65s ease-in ${p.delay} forwards` }}
+        {/* crumbs — originate from slice base, animate on drop */}
+        {showCrumbs && CRUMB_DEFS.map((c) => (
+          <rect
+            key={`${crumbKey}-${c.id}`}
+            x="80" y="114" width="5" height="5" rx="1.6"
+            fill="#C4914A"
+            style={{
+              "--dx": `${c.dx}px`,
+              "--dy": `${c.dy}px`,
+              animation: `crumb-fall-2d 1.15s ease-in ${c.delay}ms both`,
+            } as React.CSSProperties}
           />
         ))}
-      </svg>
-    </div>
+      </g>
+
+      {/* toaster body */}
+      <rect x="26" y="104" width="116" height="62" rx="22" fill="#D9A85C" stroke="#4A6B4D" strokeWidth="3.4" />
+      {/* bread slot — glows brighter when session is active */}
+      <rect x="56" y="112" width="56" height="9" rx="4.5" fill="#4A6B4D" opacity={lit ? 0.85 : 0.65} />
+      {/* dial */}
+      <circle cx="124" cy="140" r="7.5" fill="#FAF7F0" stroke="#4A6B4D" strokeWidth="3" />
+      {/* vent */}
+      <rect x="40" y="134" width="26" height="6" rx="3" fill="#FAF7F0" opacity="0.75" />
+
+      {/* lever position wrapper — moves up when toast pops */}
+      <g style={{ transform: popped ? "translateY(-9px)" : "translateY(0)", transition: `transform 0.5s ${SPRING}` }}>
+        {/* jiggle + interaction group */}
+        <g
+          onClick={(e) => { e.stopPropagation(); onLeverClick?.(); }}
+          onMouseEnter={() => setLeverHovered(true)}
+          onMouseLeave={() => setLeverHovered(false)}
+          style={{ cursor: "pointer", animation: jiggling ? "lever-jiggle 0.4s ease-in-out" : undefined }}
+        >
+          {/* wider transparent hit area */}
+          <rect x="138" y="118" width="24" height="32" fill="transparent" />
+          <rect x="146" y="126" width="8" height="20" rx="4" fill={leverFill} />
+        </g>
+      </g>
+
+      {/* feet */}
+      <rect x="42" y="160" width="16" height="10" rx="4" fill="#4A6B4D" opacity="0.85" />
+      <rect x="110" y="160" width="16" height="10" rx="4" fill="#4A6B4D" opacity="0.85" />
+
+      {/* resting crumbs at base */}
+      <g fill="#C4914A" opacity="0.8">
+        <rect x="18" y="166" width="5" height="4" rx="1.5" transform="rotate(-18 18 166)" />
+        <rect x="34" y="170" width="4" height="4" rx="1.4" transform="rotate(24 34 170)" />
+        <rect x="146" y="168" width="5" height="4" rx="1.5" transform="rotate(12 146 168)" />
+        <rect x="132" y="172" width="4" height="4" rx="1.4" transform="rotate(-30 132 172)" />
+      </g>
+    </svg>
   );
 }
 
@@ -151,7 +201,7 @@ function CaptureOverlay({
   return (
     <div className="animate-pop-in w-64 rounded-2xl bg-crumb-cream shadow-xl ring-1 ring-crumb-fog p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-crumb-moss">
+        <span className="font-heading text-[10px] font-semibold uppercase tracking-wider text-crumb-moss">
           {asIdea ? "idea" : "breadcrumb"}
         </span>
         <button
@@ -200,7 +250,7 @@ function ReturnCard({ text, onGotIt }: { text: string; onGotIt: () => void }) {
         fading ? "opacity-0" : "opacity-100",
       ].join(" ")}
     >
-      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-crumb-gold">
+      <p className="font-heading mb-1 text-[10px] font-semibold uppercase tracking-wider text-crumb-gold">
         where was i?
       </p>
       <p className="text-sm leading-snug text-crumb-ink line-clamp-4 break-words">{text}</p>
@@ -261,11 +311,11 @@ function NamingBanner({
 // ─── Dynamic window sizing ────────────────────────────────────────────────────
 // Sizes (logical px): idle is tiny; window grows to fit open cards only.
 const MODE_SIZES: Record<ToasterMode, [number, number]> = {
-  idle:           [110, 110],
-  "crumb-drop":   [110, 110],
-  capture:        [280, 240],
-  "return-peek":  [280, 280],
-  history:        [280, 360],
+  idle:           [140, 144],
+  "crumb-drop":   [140, 144],
+  capture:        [280, 280],
+  "return-peek":  [280, 320],
+  history:        [280, 400],
 };
 
 async function resizeAnchored(w: number, h: number): Promise<void> {
@@ -325,8 +375,8 @@ export function Toaster({
   // Resize + re-anchor whenever mode or transient overlays change.
   useEffect(() => {
     let [w, h] = MODE_SIZES[mode];
-    if (namingSuggestion && (mode === "idle" || mode === "crumb-drop")) { w = 280; h = 220; }
-    if (hintVisible && mode === "idle") { w = 280; h = Math.max(h, 160); }
+    if (namingSuggestion && (mode === "idle" || mode === "crumb-drop")) { w = 280; h = 250; }
+    if (hintVisible && mode === "idle") { w = 280; h = 200; }
     void resizeAnchored(w, h);
   }, [mode, namingSuggestion, hintVisible]);
 
@@ -383,7 +433,7 @@ export function Toaster({
   return (
     <div className="w-full h-full relative overflow-hidden">
       {/* Overlays — anchor from bottom-right corner, stack upward */}
-      <div className="absolute bottom-[96px] right-2 flex flex-col items-end gap-2">
+      <div className="absolute bottom-[136px] right-2 flex flex-col items-end gap-2">
 
         {/* First-run hint — auto-dismisses after 5 s */}
         {hintVisible && mode === "idle" && (
@@ -417,18 +467,15 @@ export function Toaster({
         )}
       </div>
 
-      {/* Crumb-drop particles — positioned above bread slots in the 110×110 window */}
-      {dropping && <CrumbParticles tick={crumbDropTick} />}
-
-      {/* The toaster — lift+brighten on hover; no permanent animation */}
+      {/* The toaster character — lift+brighten on hover; crumbs embedded in SVG */}
       <button
         aria-label={isCapturing ? "dismiss capture" : "open capture"}
         onClick={() => (isCapturing ? dismissCapture() : openCapture())}
         onContextMenu={handleContextMenu}
         className={[
-          "absolute bottom-2 right-2 w-20 h-20",
+          "absolute bottom-2 right-2 w-[112px] h-[123px]",
           "flex items-center justify-center",
-          "rounded-full focus:outline-none",
+          "rounded-3xl focus:outline-none",
           "transition-all duration-150 hover:-translate-y-0.5 hover:brightness-110",
           isCapturing ? "ring-2 ring-crumb-gold/60 ring-offset-0 animate-ring-pulse" : "",
         ].join(" ")}
@@ -437,6 +484,10 @@ export function Toaster({
           lit={hasActiveSession}
           onLeverClick={handleLeverClick}
           jiggling={leverJiggling}
+          popped={isCapturing || isReturn}
+          leaning={isReturn}
+          showCrumbs={dropping}
+          crumbKey={crumbDropTick}
         />
       </button>
     </div>

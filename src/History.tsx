@@ -52,7 +52,7 @@ export function History({ recentFocuses, onStartSession, onClose }: HistoryProps
       {/* Jump back in */}
       {recentFocuses.length > 0 ? (
         <div className="px-4 pt-2.5 pb-3">
-          <p className="mb-1.5 text-[10px] uppercase tracking-wide text-crumb-ink-dim font-medium">
+          <p className="font-heading mb-1.5 text-[10px] uppercase tracking-wide text-crumb-ink-dim font-medium">
             Jump back in
           </p>
           <ul className="space-y-1">

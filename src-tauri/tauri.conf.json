@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "Breadcrumb",
-        "width": 110,
-        "height": 110,
+        "width": 140,
+        "height": 144,
         "resizable": false,
         "fullscreen": false,
         "alwaysOnTop": true,
