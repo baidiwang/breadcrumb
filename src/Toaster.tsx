@@ -318,23 +318,37 @@ const MODE_SIZES: Record<ToasterMode, [number, number]> = {
   history:        [280, 400],
 };
 
+const isTauri = typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+
+// Resize the window while keeping its BOTTOM-RIGHT corner fixed — so the toaster
+// stays at the same screen position after the user drags it.
 async function resizeAnchored(w: number, h: number): Promise<void> {
-  // @ts-expect-error injected by Tauri at runtime
-  if (typeof window === "undefined" || !window.__TAURI_INTERNALS__) return;
+  if (!isTauri) return;
   try {
     const [{ getCurrentWindow }, { LogicalSize, LogicalPosition }] = await Promise.all([
       import("@tauri-apps/api/window"),
       import("@tauri-apps/api/dpi"),
     ]);
     const win = getCurrentWindow();
-    const margin = 16;
-    const sw = window.screen.width;
-    const sh = window.screen.height;
-    await win.setPosition(new LogicalPosition(sw - w - margin, sh - h - margin));
+    const sf    = await win.scaleFactor();
+    const pPos  = await win.outerPosition();
+    const pSize = await win.outerSize();
+    // Convert current bottom-right corner to logical px, then subtract new size.
+    const brX = (pPos.x + pSize.width)  / sf;
+    const brY = (pPos.y + pSize.height) / sf;
+    await win.setPosition(new LogicalPosition(brX - w, brY - h));
     await win.setSize(new LogicalSize(w, h));
   } catch {
-    // not in Tauri or permission denied — silently skip
+    // not in Tauri or permission denied
   }
+}
+
+async function startWindowDrag(): Promise<void> {
+  if (!isTauri) return;
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().startDragging();
+  } catch { /* not in Tauri */ }
 }
 
 // ─── Main Toaster component ───────────────────────────────────────────────────
@@ -431,7 +445,7 @@ export function Toaster({
   const dropping    = mode === "crumb-drop";
 
   return (
-    <div className="w-full h-full relative overflow-hidden">
+    <div className="w-full h-full relative">
       {/* Overlays — anchor from bottom-right corner, stack upward */}
       <div className="absolute bottom-[116px] right-2 flex flex-col items-end gap-2">
 
@@ -467,15 +481,16 @@ export function Toaster({
         )}
       </div>
 
-      {/* The toaster character — lift+brighten on hover; crumbs embedded in SVG */}
+      {/* The toaster character — draggable, no opaque background (SVG paints its own pixels) */}
       <button
         aria-label={isCapturing ? "dismiss capture" : "open capture"}
         onClick={() => (isCapturing ? dismissCapture() : openCapture())}
         onContextMenu={handleContextMenu}
+        onPointerDown={(e) => { if (e.button === 0) void startWindowDrag(); }}
         className={[
           "absolute bottom-2 right-2 w-[96px] h-[105px]",
           "flex items-center justify-center",
-          "bg-[#FAF7F0] rounded-2xl focus:outline-none",
+          "rounded-2xl focus:outline-none",
           "transition-all duration-150 hover:-translate-y-0.5 hover:brightness-110",
           isCapturing ? "ring-2 ring-crumb-gold/60 ring-offset-0 animate-ring-pulse" : "",
         ].join(" ")}

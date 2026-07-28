@@ -1,11 +1,9 @@
 // Breadcrumb desktop (Tauri v2).
 //
 // Native capabilities:
-//   foreground_app  — returns the NAME of the frontmost app (never content).
-//                     Privacy-graded Level-1 signal. Returns "" when unavailable.
-//   setup           — positions the window at the screen's bottom-right corner
-//                     (320×420 logical px, 16px margin) then shows it, avoiding
-//                     a position-flash from the transparent frameless window.
+//   foreground_app    — name of the frontmost app (privacy-graded, never content).
+//   set_cursor_ignore — toggle setIgnoresMouseEvents on the main window.
+//   setup             — positions the window bottom-right, then shows it.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -66,9 +64,17 @@ fn get_foreground_app() -> Option<String> {
     None
 }
 
-// Position the window 16 logical px from the bottom-right of the current monitor.
-// Idle size is 120×122 (solid cream, no transparency). JS expands per mode via
-// resizeAnchored() in Toaster.tsx.
+// Toggle whether the OS routes mouse events to this window. When true the window
+// is fully click-through; JS calls this command via onMouseEnter/Leave on the
+// toaster element so only the visible pixels capture input.
+#[tauri::command]
+fn set_cursor_ignore(window: tauri::WebviewWindow, ignore: bool) {
+    let _ = window.set_ignore_cursor_events(ignore);
+}
+
+// Place the window 16 logical px from the bottom-right of the current monitor.
+// The idle window is 120×122; JS resizes per mode anchored to the bottom-right
+// corner so the toaster stays put when cards open.
 fn anchor_bottom_right(win: &tauri::WebviewWindow) {
     let Ok(Some(monitor)) = win.current_monitor() else { return };
     let scale = monitor.scale_factor();
@@ -84,12 +90,12 @@ fn anchor_bottom_right(win: &tauri::WebviewWindow) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![foreground_app])
+        .invoke_handler(tauri::generate_handler![foreground_app, set_cursor_ignore])
         .setup(|app| {
             let win = app.get_webview_window("main")
                 .expect("main webview window not found");
+
             anchor_bottom_right(&win);
-            // Window starts hidden (visible: false in config) to avoid a position flash.
             win.show()?;
             Ok(())
         })
