@@ -19,7 +19,7 @@
         "fullscreen": false,
         "alwaysOnTop": true,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "skipTaskbar": true,
         "visible": false
       }

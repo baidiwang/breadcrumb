@@ -475,7 +475,7 @@ export function Toaster({
         className={[
           "absolute bottom-2 right-2 w-[96px] h-[105px]",
           "flex items-center justify-center",
-          "rounded-3xl focus:outline-none",
+          "bg-[#FAF7F0] rounded-2xl focus:outline-none",
           "transition-all duration-150 hover:-translate-y-0.5 hover:brightness-110",
           isCapturing ? "ring-2 ring-crumb-gold/60 ring-offset-0 animate-ring-pulse" : "",
         ].join(" ")}
