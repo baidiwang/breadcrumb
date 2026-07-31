@@ -112,14 +112,25 @@ export default function App() {
 
   // Dev-only: Cmd+Shift+R triggers the return flow with a fake 90 s drift so
   // the "Where was I?" card can be tested without waiting for real idle time.
+  // Registered as a GLOBAL shortcut (same mechanism as Cmd+Shift+Space) so it
+  // fires even when the transparent Breadcrumb window has no keyboard focus.
   // import.meta.env.DEV is false in production builds — Vite tree-shakes this out.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
+    const chord = "CmdOrCtrl+Shift+R";
+    const fire = () => void handleReturn.current!({ reason: "tab-hidden", awayMs: 90_000 });
+    const isTauri = !!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    if (isTauri) {
+      let unregister: (() => void) | undefined;
+      void import("@tauri-apps/plugin-global-shortcut").then(({ register, unregister: unreg }) => {
+        void register(chord, fire);
+        unregister = () => void unreg(chord);
+      });
+      return () => unregister?.();
+    }
+    // Browser fallback — window keydown is fine here since there's no focus problem
     const handler = (e: KeyboardEvent) => {
-      if (e.metaKey && e.shiftKey && e.key === "R") {
-        e.preventDefault();
-        void handleReturn.current!({ reason: "tab-hidden", awayMs: 90_000 });
-      }
+      if (e.metaKey && e.shiftKey && e.key === "R") { e.preventDefault(); fire(); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
